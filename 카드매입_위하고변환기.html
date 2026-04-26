@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>카드매입 위하고 변환기</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy: #0f1f3d;
+  --navy2: #1a3060;
+  --blue: #2563eb;
+  --blue-lt: #dbeafe;
+  --green: #059669;
+  --green-lt: #d1fae5;
+  --red: #dc2626;
+  --red-lt: #fee2e2;
+  --amber: #d97706;
+  --amber-lt: #fef3c7;
+  --gray50: #f8fafc;
+  --gray100: #f1f5f9;
+  --gray200: #e2e8f0;
+  --gray300: #cbd5e1;
+  --gray400: #94a3b8;
+  --gray500: #64748b;
+  --gray600: #475569;
+  --gray700: #334155;
+  --gray800: #1e293b;
+  --white: #ffffff;
+  --font: 'Noto Sans KR', sans-serif;
+  --mono: 'IBM Plex Mono', monospace;
+  --radius: 10px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.06);
+  --shadow-lg: 0 4px 6px rgba(0,0,0,0.05), 0 10px 40px rgba(0,0,0,0.1);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{background:var(--gray50);font-family:var(--font);color:var(--gray800);}
+body{min-height:100vh;}
+
+/* LAYOUT */
+.app-header{background:var(--navy);color:white;padding:0 2rem;display:flex;align-items:center;justify-content:space-between;height:58px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,0.2);}
+.app-logo{display:flex;align-items:center;gap:10px;}
+.app-logo-icon{width:28px;height:28px;background:var(--blue);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;}
+.app-logo-text{font-size:15px;font-weight:600;letter-spacing:-0.02em;}
+.app-logo-sub{font-size:11px;color:rgba(255,255,255,0.5);font-family:var(--mono);}
+.header-badge{background:rgba(255,255,255,0.1);border:0.5px solid rgba(255,255,255,0.15);border-radius:20px;padding:4px 12px;font-size:11px;color:rgba(255,255,255,0.6);font-family:var(--mono);}
+
+.main{max-width:900px;margin:0 auto;padding:2rem 1.5rem;}
+
+/* STEPS */
+.steps{display:flex;align-items:center;margin-bottom:2.5rem;background:var(--white);border:0.5px solid var(--gray200);border-radius:var(--radius);padding:1.25rem 1.5rem;box-shadow:var(--shadow);}
+.step-item{display:flex;align-items:center;gap:10px;flex:1;}
+.step-num{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0;transition:all .3s;}
+.step-num.idle{background:var(--gray100);color:var(--gray400);border:1.5px solid var(--gray200);}
+.step-num.active{background:var(--navy);color:white;border:1.5px solid var(--navy);}
+.step-num.done{background:var(--green-lt);color:var(--green);border:1.5px solid var(--green);}
+.step-label{font-size:13px;font-weight:500;transition:color .3s;}
+.step-label.idle{color:var(--gray400);}
+.step-label.active{color:var(--navy);}
+.step-label.done{color:var(--green);}
+.step-line{flex:2;height:1px;background:var(--gray200);margin:0 1rem;}
+.step-line.done{background:var(--green);}
+
+/* CARD */
+.card{background:var(--white);border:0.5px solid var(--gray200);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:1.25rem;overflow:hidden;}
+.card-header{padding:1.25rem 1.5rem;border-bottom:0.5px solid var(--gray100);display:flex;align-items:center;gap:10px;}
+.card-header-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.card-header-icon.blue{background:var(--blue-lt);}
+.card-header-icon.green{background:var(--green-lt);}
+.card-header-icon.amber{background:var(--amber-lt);}
+.card-title{font-size:15px;font-weight:600;color:var(--navy);}
+.card-sub{font-size:12px;color:var(--gray400);margin-top:1px;}
+.card-body{padding:1.5rem;}
+
+/* FORM GROUPS */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem;}
+.form-row.three{grid-template-columns:1fr 1fr 1fr;}
+.fg{display:flex;flex-direction:column;gap:8px;}
+.fg-label{font-size:12px;font-weight:600;color:var(--gray500);text-transform:uppercase;letter-spacing:0.06em;}
+.btn-group{display:flex;gap:6px;flex-wrap:wrap;}
+.btn-opt{padding:8px 18px;border-radius:8px;border:1.5px solid var(--gray200);background:var(--white);color:var(--gray500);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--font);transition:all .2s;}
+.btn-opt:hover{border-color:var(--gray400);color:var(--gray700);}
+.btn-opt.sel{background:var(--navy);color:white;border-color:var(--navy);}
+.btn-opt.thr-btn{padding:7px 14px;font-size:12px;}
+.btn-opt.thr-btn.sel{background:var(--blue);border-color:var(--blue);}
+
+/* RULES PANEL */
+.rules-panel{background:var(--gray50);border:0.5px solid var(--gray200);border-radius:8px;padding:1.25rem;}
+.rules-title{font-size:11px;font-weight:700;color:var(--gray400);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:1rem;}
+.rules-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+.rules-sec{display:flex;flex-direction:column;gap:0;}
+.rules-sec-title{font-size:11px;font-weight:600;color:var(--navy);text-transform:uppercase;letter-spacing:0.05em;padding-bottom:6px;border-bottom:1.5px solid var(--navy);margin-bottom:8px;}
+.rule-row{display:flex;align-items:flex-start;gap:6px;margin-bottom:5px;font-size:12px;line-height:1.4;}
+.badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;white-space:nowrap;flex-shrink:0;margin-top:1px;}
+.badge.g{background:var(--green-lt);color:var(--green);}
+.badge.r{background:var(--red-lt);color:var(--red);}
+.badge.b{background:var(--blue-lt);color:var(--blue);}
+.badge.a{background:var(--amber-lt);color:var(--amber);}
+.badge.n{background:var(--gray100);color:var(--gray500);border:0.5px solid var(--gray200);}
+.rule-text{color:var(--gray600);}
+
+/* UPLOAD */
+.dropzone{border:1.5px dashed var(--gray300);border-radius:10px;padding:3rem 2rem;text-align:center;cursor:pointer;transition:all .2s;background:var(--gray50);}
+.dropzone:hover,.dropzone.over{border-color:var(--blue);background:var(--blue-lt);}
+.dropzone-icon{font-size:2.5rem;margin-bottom:1rem;}
+.dropzone-main{font-size:15px;font-weight:600;color:var(--navy);margin-bottom:4px;}
+.dropzone-main span{color:var(--blue);}
+.dropzone-sub{font-size:12px;color:var(--gray400);}
+.file-list{margin-top:1rem;display:flex;flex-direction:column;gap:6px;}
+.file-item{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--gray50);border:0.5px solid var(--gray200);border-radius:8px;}
+.file-icon{font-size:18px;}
+.file-name{flex:1;font-size:13px;font-weight:500;color:var(--navy);}
+.file-size{font-size:11px;color:var(--gray400);font-family:var(--mono);}
+.file-rm{cursor:pointer;color:var(--red);font-size:16px;padding:0 4px;line-height:1;}
+
+/* STATS */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.25rem;}
+.stat-card{background:var(--white);border:0.5px solid var(--gray200);border-radius:var(--radius);padding:1.25rem;text-align:center;box-shadow:var(--shadow);}
+.stat-val{font-size:26px;font-weight:700;font-family:var(--mono);color:var(--navy);}
+.stat-val.g{color:var(--green);}
+.stat-val.r{color:var(--red);}
+.stat-val.a{color:var(--amber);}
+.stat-lbl{font-size:12px;color:var(--gray400);margin-top:4px;}
+.stat-amt{font-size:11px;color:var(--gray400);font-family:var(--mono);margin-top:2px;}
+
+/* TABLE */
+.table-wrap{overflow-x:auto;border-radius:8px;border:0.5px solid var(--gray200);}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+thead th{background:var(--gray800);color:rgba(255,255,255,0.8);padding:10px 12px;text-align:left;font-weight:500;white-space:nowrap;letter-spacing:0.02em;font-size:11px;}
+thead th:first-child{border-radius:0;}
+tbody tr{transition:background .1s;}
+tbody tr:hover{background:var(--gray50);}
+tbody tr.rev-row{background:#fffbeb;}
+tbody tr.rev-row:hover{background:#fef3c7;}
+tbody td{padding:9px 12px;border-bottom:0.5px solid var(--gray100);color:var(--gray700);white-space:nowrap;}
+.td-num{text-align:right;font-family:var(--mono);}
+.chip{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;}
+.chip.g{background:var(--green-lt);color:var(--green);}
+.chip.r{background:var(--red-lt);color:var(--red);}
+.chip.b{background:var(--blue-lt);color:var(--blue);}
+.chip.a{background:var(--amber-lt);color:var(--amber);}
+.chip.n{background:var(--gray100);color:var(--gray500);}
+.more-row td{text-align:center;color:var(--gray400);padding:14px;font-size:12px;}
+
+/* BUTTONS */
+.btn-row{display:flex;justify-content:flex-end;gap:10px;margin-top:1.5rem;}
+.btn{padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font);transition:all .2s;border:1.5px solid transparent;}
+.btn.prev{background:var(--white);color:var(--gray500);border-color:var(--gray200);}
+.btn.prev:hover{border-color:var(--gray400);color:var(--gray700);}
+.btn.next{background:var(--navy);color:white;border-color:var(--navy);}
+.btn.next:hover{background:var(--navy2);}
+.btn.next:disabled{opacity:0.35;cursor:not-allowed;}
+.btn.dl{background:var(--green);color:white;border-color:var(--green);}
+.btn.dl:hover{background:#047857;}
+.btn.dl-big{padding:12px 32px;font-size:15px;}
+
+/* NOTICE */
+.notice{background:var(--blue-lt);border:0.5px solid #93c5fd;border-radius:8px;padding:10px 14px;font-size:12px;color:#1d4ed8;margin-top:1rem;display:flex;align-items:flex-start;gap:8px;}
+.notice-icon{flex-shrink:0;margin-top:1px;}
+.warn-box{background:var(--amber-lt);border:0.5px solid #fcd34d;border-radius:8px;padding:10px 14px;font-size:12px;color:#92400e;margin-top:1rem;}
+
+/* HIDDEN */
+.hidden{display:none!important;}
+
+/* ACCOUNT LEGEND */
+.legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.legend-item{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--gray500);}
+.legend-dot{width:6px;height:6px;border-radius:50%;}
+.legend-dot.g{background:var(--green);}
+.legend-dot.r{background:var(--red);}
+.legend-dot.a{background:var(--amber);}
+
+/* Responsive */
+@media(max-width:600px){
+  .form-row,.form-row.three{grid-template-columns:1fr;}
+  .rules-grid{grid-template-columns:1fr;}
+  .stats-grid{grid-template-columns:repeat(2,1fr);}
+  .main{padding:1rem;}
+}
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-logo">
+    <div class="app-logo-icon">💳</div>
+    <div>
+      <div class="app-logo-text">카드매입 위하고 변환기</div>
+      <div class="app-logo-sub">국세청 자료 → 위하고 업로드 양식</div>
+    </div>
+  </div>
+  <div class="header-badge">v3.0 · 2026</div>
+</header>
+
+<main class="main">
+
+  <!-- STEP BAR -->
+  <div class="steps">
+    <div class="step-item">
+      <div class="step-num active" id="sn1">1</div>
+      <div class="step-label active" id="sl1">사업자 유형</div>
+    </div>
+    <div class="step-line" id="ln1"></div>
+    <div class="step-item">
+      <div class="step-num idle" id="sn2">2</div>
+      <div class="step-label idle" id="sl2">파일 업로드</div>
+    </div>
+    <div class="step-line" id="ln2"></div>
+    <div class="step-item">
+      <div class="step-num idle" id="sn3">3</div>
+      <div class="step-label idle" id="sl3">변환 결과</div>
+    </div>
+  </div>
+
+  <!-- ===================== PAGE 1 ===================== -->
+  <div id="page1">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon blue">🏢</div>
+        <div>
+          <div class="card-title">사업자 정보 설정</div>
+          <div class="card-sub">공제·불공제 및 계정과목 분류 기준이 결정됩니다</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="fg">
+            <div class="fg-label">사업자 구분</div>
+            <div class="btn-group">
+              <button class="btn-opt sel" data-g="biz" data-v="개인" onclick="pick(this)">개인사업자</button>
+              <button class="btn-opt" data-g="biz" data-v="법인" onclick="pick(this)">법인사업자</button>
+            </div>
+          </div>
+          <div class="fg">
+            <div class="fg-label">과세 유형</div>
+            <div class="btn-group">
+              <button class="btn-opt sel" data-g="tax" data-v="과세" onclick="pick(this)">과세사업자</button>
+              <button class="btn-opt" data-g="tax" data-v="면세" onclick="pick(this)">면세사업자</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-row" id="empRow">
+          <div class="fg">
+            <div class="fg-label">직원 유무</div>
+            <div class="btn-group">
+              <button class="btn-opt sel" data-g="emp" data-v="있음" onclick="pick(this)">직원 있음</button>
+              <button class="btn-opt" data-g="emp" data-v="없음" onclick="pick(this)">직원 없음 (대표자만)</button>
+            </div>
+          </div>
+          <div class="fg" id="thrRow">
+            <div class="fg-label">식사비 접대비 전환 기준</div>
+            <div class="btn-group">
+              <button class="btn-opt thr-btn" data-g="thr" data-v="50000" onclick="setThr(this,50000)">5만원 초과</button>
+              <button class="btn-opt thr-btn sel" data-g="thr" data-v="100000" onclick="setThr(this,100000)">10만원 초과</button>
+              <button class="btn-opt thr-btn" data-g="thr" data-v="150000" onclick="setThr(this,150000)">15만원 초과</button>
+              <button class="btn-opt thr-btn" data-g="thr" data-v="200000" onclick="setThr(this,200000)">20만원 초과</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="rules-panel" id="rulesPanel"></div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn next" onclick="go(2)">다음 단계 →</button>
+    </div>
+  </div>
+
+  <!-- ===================== PAGE 2 ===================== -->
+  <div id="page2" class="hidden">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon blue">📂</div>
+        <div>
+          <div class="card-title">파일 업로드</div>
+          <div class="card-sub">위하고에서 다운받은 신용카드 매입 xlsx 파일 (거래처별 복수 선택 가능)</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="dropzone" id="zone" onclick="document.getElementById('fi').click()">
+          <div class="dropzone-icon">📥</div>
+          <div class="dropzone-main"><span>클릭하거나 파일을 드래그</span>하세요</div>
+          <div class="dropzone-sub">.xlsx 파일 · 복수 선택 가능 · 거래처별 파일 한꺼번에 올리기</div>
+        </div>
+        <input type="file" id="fi" accept=".xlsx,.xls" multiple style="display:none" onchange="addFiles(this.files)">
+        <div class="file-list" id="fList"></div>
+        <div class="notice">
+          <span class="notice-icon">ℹ️</span>
+          <span>헤더 컬럼: <b>연도, 일자, 거래처, 구분, 품명, 공급가액, 세액, 합계, 국세청, 업태, 종목, 유형, 차변계정, 대변계정, 사업자등록번호</b></span>
+        </div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn prev" onclick="go(1)">← 이전</button>
+      <button class="btn next" id="procBtn" onclick="proc()" disabled>변환 시작 →</button>
+    </div>
+  </div>
+
+  <!-- ===================== PAGE 3 ===================== -->
+  <div id="page3" class="hidden">
+    <div class="stats-grid" id="statsG"></div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon green">✅</div>
+        <div style="flex:1">
+          <div class="card-title">변환 결과</div>
+          <div class="card-sub">노란색 행 = 검토 필요 · 미리보기 최대 50건</div>
+        </div>
+        <button class="btn dl" onclick="dl()">📥 다운로드 (.xlsx)</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="table-wrap" id="tbl"></div>
+      </div>
+    </div>
+    <div id="revCard" class="card hidden">
+      <div class="card-header">
+        <div class="card-header-icon amber">⚠️</div>
+        <div>
+          <div class="card-title">검토 필요 항목</div>
+          <div class="card-sub">계정 자동 분류 불가 · 수동 확인 후 위하고에서 수정</div>
+        </div>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="table-wrap" id="revTbl"></div>
+      </div>
+    </div>
+    <div class="btn-row" style="justify-content:space-between;align-items:center">
+      <button class="btn prev" onclick="go(2)">← 파일 재업로드</button>
+      <button class="btn dl dl-big" onclick="dl()">📥 위하고 양식 다운로드</button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+/* ===================== STATE ===================== */
+const S = { biz:'개인', tax:'과세', emp:'있음', thr:100000, files:[], rows:[] };
+
+/* ===================== 계정 매핑 ===================== */
+const AM = {
+  '(판)임원급여':801,'(판)직원급여':802,'(판)상여금':803,
+  '(판)복리후생비':811,'(판)여비교통비':812,'(판)접대비(기업업무추진비)':813,
+  '(판)기업업무추진비':813,'(판)통신비':814,'(판)가스수도료':815,
+  '(판)전력비':816,'(판)세금과공과금':817,'(판)감가상각비':818,
+  '(판)지급임차료':819,'(판)수선비':820,'(판)보험료':821,
+  '(판)차량유지비':822,'(판)교육훈련비':825,'(판)도서인쇄비':826,
+  '(판)회의비':827,'(판)사무용품비':829,'(판)소모품비':830,
+  '(판)지급수수료':831,'(판)잡비':836,
+  '(제)복리후생비':511,'(제)여비교통비':512,'(제)접대비(기업업무추진비)':513,
+  '(제)보험료':521,'(제)차량유지비':522,'(제)소모품비':530,'(제)지급수수료':531,
+  '미지급금':253,'현금':101,'보통예금':103,'당좌예금':102,
+  '부가세대급금':135,'선급금':131,'외상매입금':251,
+};
+const KW = [
+  ['접대비',813],['기업업무추진비',813],['복리후생비',811],
+  ['여비교통비',812],['차량유지비',822],['소모품비',830],
+  ['지급수수료',831],['보험료',821],['통신비',814],
+  ['교육훈련비',825],['도서인쇄비',826],['세금과공과금',817],
+  ['지급임차료',819],['미지급금',253],['현금',101],
+];
+const ACCT_NAMES = {
+  801:'임원급여',802:'직원급여',803:'상여금',
+  811:'복리후생비',812:'여비교통비',813:'기업업무추진비',
+  814:'통신비',815:'가스수도료',816:'전력비',817:'세금과공과금',
+  818:'감가상각비',819:'지급임차료',820:'수선비',821:'보험료',
+  822:'차량유지비',825:'교육훈련비',826:'도서인쇄비',827:'회의비',
+  829:'사무용품비',830:'소모품비',831:'지급수수료',836:'잡비',
+  511:'복리후생비(제)',512:'여비교통비(제)',513:'접대비(제)',
+  521:'보험료(제)',522:'차량유지비(제)',530:'소모품비(제)',531:'지급수수료(제)',
+  253:'미지급금',101:'현금',103:'보통예금',
+};
+
+function mN(n){
+  if(!n)return null;
+  n=String(n).trim();
+  if(AM[n]!==undefined)return AM[n];
+  for(const[k,v]of KW)if(n.includes(k))return v;
+  return null;
+}
+
+/* ===================== 분류 규칙 ===================== */
+// 1순위: 상호 직접 매핑
+const DIRECT=[
+  {match:['금융결제원'],code:817,gon:'불공제',note:'금융결제원→세금과공과금(세금/보험료 카드납부)'},
+  {match:['국민건강보험'],code:817,gon:'불공제',note:'건강보험료→세금과공과금'},
+  {match:['국민연금공단','국민연금'],code:817,gon:'불공제',note:'국민연금→세금과공과금'},
+  {match:['근로복지공단'],code:817,gon:'불공제',note:'고용/산재보험→세금과공과금'},
+];
+
+// 2순위: 인터넷구입 거래처(온라인 PG/쇼핑몰)
+const ONLINE_VENDOR=[
+  '쿠팡페이','쿠팡','토스페이먼츠','한국정보통신','나이스페이먼츠',
+  '나이스정보통신','스마트로','엔에이치엔한국사이버결제','엔에이치엔케이씨피',
+  '이니시스','카카오페이','네이버파이낸셜','다날','세틀뱅크','페이레터',
+  '갤럭시아','jtnet','케이에스넷','네이버페이','카카오모빌리티',
+];
+
+// 업태/종목
+const FOOD_업태=['음식점','음식','숙박업'];
+const FOOD_종목=['한식','중식','일식','양식','분식','치킨','피자','패스트푸드','도너츠','커피','카페','제과점','뷔페','음식점업','일반음식점','휴게음식','호프'];
+const PARK_상호=['터널','하이패스','도로공사','한국도로공사','통행료'];
+const PARK_종목=['주차장','주차'];
+const FUEL_종목=['주유소','셀프주유','충전소'];
+const TRANS_상호=['코레일','한국철도','공항철도','티머니','이지카드','한국도심공항'];
+const TRANS_업태=['운수업'];
+const TRANS_종목=['택시','버스','지하철','철도','여객','항공','항공사'];
+const TELECOM_업태=['통신업'];
+const TELECOM_종목=['이동통신','부가통신','유선통신','인터넷통신'];
+const INS_업태=['보험업'];
+const INS_종목=['생명보험','손해보험','화재보험','자동차보험','보험'];
+const EDU_업태=['교육서비스업','교육'];
+const EDU_종목=['학원','교습소','직업훈련','평생교육'];
+const CONV_종목=['편의점','슈퍼마켓','슈퍼','마트'];
+const ONLINE_업태=['전자상거래','통신판매','소셜커머스','온라인쇼핑'];
+const MED_종목=['약국','병원','의원','치과','한의원','의료','요양원'];
+
+function incArr(arr,str){return arr.some(k=>str.includes(k));}
+function incArrI(arr,str){return arr.some(k=>str.toLowerCase().includes(k.toLowerCase()));}
+function isWeekday(dt){if(!dt)return true;const d=new Date(dt);return d.getDay()!==0&&d.getDay()!==6;}
+
+function ct(){if(S.emp==='있음')return'emp';if(S.biz==='법인')return'corp';return'indiv';}
+
+function classifyRow(row,dt){
+  const G=String(row['거래처']||'').trim();
+  const A=String(row['업태']||'').trim();
+  const B=String(row['종목']||'').trim();
+  const DC=String(row['차변계정']||'').trim();
+  const CR=String(row['대변계정']||'').trim();
+  const NTS=String(row['국세청']||'').trim();
+  const AMT=Number(row['합계'])||0;
+  const C=ct(), isEx=S.tax==='면세', wd=isWeekday(dt);
+  let code=null,note='',rev=false,gonOver=null;
+
+  // 1순위: 상호 직접 매핑
+  const dir=DIRECT.find(d=>d.match.some(k=>G.includes(k)));
+  if(dir){code=dir.code;note=dir.note;gonOver=dir.gon;}
+
+  // 2순위: 온라인 PG/쇼핑몰 상호
+  else if(incArrI(ONLINE_VENDOR,G)){
+    if(!wd){code=null;rev=true;note='인터넷구입(비영업일)→검토필요(개인소비 확인)';}
+    else{code=830;note='인터넷구입(영업일)→소모품비';}
+  }
+
+  // 3순위: 업태/종목
+  else if(incArr(FOOD_업태,A)||incArr(FOOD_종목,B)){
+    if(C!=='emp'){code=813;note='식사(대표자)→기업업무추진비';}
+    else if(!wd){code=813;note='식사(비영업일/주말)→기업업무추진비';}
+    else if(AMT>S.thr){code=813;note='식사('+fmtN(AMT)+'원>'+fmtN(S.thr)+'원)→기업업무추진비';}
+    else{code=811;note='식사(영업일,'+fmtN(AMT)+'원)→복리후생비';}
+  }
+  else if(incArr(PARK_종목,B)||incArrI(PARK_상호,G)){code=822;note='주차/통행료→차량유지비';}
+  else if(incArr(FUEL_종목,B)){code=822;note='주유→차량유지비';}
+  else if(incArrI(TRANS_상호,G)||incArr(TRANS_업태,A)||incArr(TRANS_종목,B)){code=812;note='교통→여비교통비';}
+  else if(incArr(TELECOM_업태,A)||incArr(TELECOM_종목,B)){code=814;note='통신→통신비';}
+  else if(incArr(INS_업태,A)||incArr(INS_종목,B)){code=821;note='보험→보험료';}
+  else if(incArr(EDU_업태,A)||incArr(EDU_종목,B)){code=825;note='교육→교육훈련비';}
+  else if(incArr(CONV_종목,B)){
+    code=(C==='emp')?811:830;
+    note='편의점→'+(C==='emp'?'복리후생비':'소모품비');
+  }
+  else if(incArr(ONLINE_업태,A)){
+    if(!wd){code=null;rev=true;note='전자상거래(비영업일)→검토필요';}
+    else{code=830;note='전자상거래(영업일)→소모품비';}
+  }
+  else if(incArr(MED_종목,B)){
+    if(C==='emp'){code=811;note='의료/약국→복리후생비';}
+    else{rev=true;note='의료/약국→검토필요(업무관련성 확인)';}
+  }
+
+  // 4순위: 기존 차변계정명 변환
+  else{
+    code=mN(DC);
+    if(code===null){rev=true;note='검토필요: 업태['+A+'] 종목['+B+']';}
+    else{
+      if(code===811&&C!=='emp'){code=813;note='복리후생비→기업업무추진비(직원없음)';}
+      else note='기존계정변환('+DC+')';
+    }
+  }
+
+  const cCode=mN(CR)||253;
+  let gong;
+  if(gonOver) gong=gonOver;
+  else if(isEx) gong='불공제';
+  else if(code===813) gong='불공제';
+  else gong=(NTS==='공제')?'공제':'불공제';
+
+  return{code,cCode,gong,note,rev,wd};
+}
+
+/* ===================== PARSE DATE ===================== */
+function parseD(y,d){
+  const ys=String(y||'').trim(),ds=String(d||'').trim();
+  if(!ys||!ds||/합계|소계/i.test(ds))return null;
+  const m=ds.match(/^(\d{1,2})-(\d{1,2})$/);
+  if(!m)return null;
+  return ys+'-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0');
+}
+function fmtN(n){return Number(n).toLocaleString('ko-KR');}
+
+/* ===================== UI HELPERS ===================== */
+function pick(btn){
+  const g=btn.dataset.g;
+  document.querySelectorAll('[data-g="'+g+'"]').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel');
+  S[g]=btn.dataset.v;
+  const isEx=S.tax==='면세';
+  document.getElementById('empRow').style.display=isEx?'none':'';
+  document.getElementById('thrRow').style.display=(isEx||S.emp==='없음')?'none':'';
+  updateRules();
+}
+function setThr(btn,val){
+  document.querySelectorAll('[data-g="thr"]').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel');S.thr=val;updateRules();
+}
+
+function updateRules(){
+  const isEx=S.tax==='면세',C=ct();
+  const lblC={emp:'직원 있는 경우',corp:'법인 대표자만',indiv:'개인 직원없음'}[C];
+  const thr=fmtN(S.thr);
+
+  const mkSec=(title,rows)=>`
+    <div class="rules-sec">
+      <div class="rules-sec-title">${title}</div>
+      ${rows.map(([bc,bt,tx])=>`<div class="rule-row"><span class="badge ${bc}">${bt}</span><span class="rule-text">${tx}</span></div>`).join('')}
+    </div>`;
+
+  const foodRows=isEx?[['r','불공제','면세사업자 → 전액 불공제']]:
+    C!=='emp'?[['b','계정','음식점 → 기업업무추진비 (813)'],['r','불공제','부가세법 §39①4']]:[
+      ['g','공제',`영업일 + ${thr}원 이하 → 복리후생비 (811)`],
+      ['r','불공제',`영업일 + ${thr}원 초과 → 기업업무추진비 (813)`],
+      ['r','불공제','비영업일 (주말) → 기업업무추진비 (813)'],
+    ];
+
+  const onlineRows=[
+    ['n','상호','쿠팡페이 / 토스페이먼츠 / 나이스페이먼츠 / 한국정보통신 등'],
+    isEx?['r','불공제','면세사업자 → 전액 불공제']:['g','공제','영업일(평일) → 소모품비 (830)'],
+    ...(!isEx?[['a','검토','비영업일(주말) → 검토필요 (개인소비 확인)']]:[] ),
+  ];
+
+  const taxRows=[
+    ['n','상호','금융결제원 → 세금과공과금 (817) · 불공제'],
+    ['n','상호','국민건강보험 / 국민연금 / 근로복지공단 → 세금과공과금'],
+  ];
+
+  const commonRows=[
+    ['b','계정','주차/터널/하이패스 → 차량유지비 (822)'],
+    ['b','계정','주유소 → 차량유지비 (822)'],
+    ['b','계정','대중교통/코레일 → 여비교통비 (812)'],
+    ['b','계정','편의점/마트 → '+(C==='emp'?'복리후생비 (811)':'소모품비 (830)')],
+    ['b','계정','교육/학원 → 교육훈련비 (825)'],
+    isEx?['r','불공제','면세사업자 전액 불공제 (부가세법 §26)']:null,
+  ].filter(Boolean);
+
+  document.getElementById('rulesPanel').innerHTML=`
+    <div class="rules-title">적용 규칙 — ${S.biz} / ${S.tax} / ${lblC}</div>
+    <div class="rules-grid">
+      ${mkSec('식사 처리',foodRows)}
+      ${mkSec('인터넷 구입',onlineRows)}
+      ${mkSec('세금/보험료 직납',taxRows)}
+      ${mkSec('공통 계정',commonRows)}
+    </div>`;
+}
+
+function go(n){
+  [1,2,3].forEach(i=>{
+    document.getElementById('page'+i).className=i===n?'':'hidden';
+    const sn=document.getElementById('sn'+i),sl=document.getElementById('sl'+i);
+    sn.className='step-num '+(i<n?'done':i===n?'active':'idle');
+    sn.textContent=i<n?'✓':i;
+    sl.className='step-label '+(i<n?'done':i===n?'active':'idle');
+    if(i<3)document.getElementById('ln'+i).className='step-line'+(i<n?' done':'');
+  });
+}
+
+/* ===================== FILE HANDLING ===================== */
+function addFiles(fs){
+  S.files=[...S.files,...Array.from(fs)];
+  renderFL();
+  document.getElementById('procBtn').disabled=S.files.length===0;
+}
+function rmF(i){S.files.splice(i,1);renderFL();document.getElementById('procBtn').disabled=S.files.length===0;}
+function renderFL(){
+  document.getElementById('fList').innerHTML=S.files.map((f,i)=>
+    `<div class="file-item">
+      <span class="file-icon">📊</span>
+      <span class="file-name">${f.name}</span>
+      <span class="file-size">${(f.size/1024).toFixed(0)} KB</span>
+      <span class="file-rm" onclick="rmF(${i})">✕</span>
+    </div>`).join('');
+}
+const zone=document.getElementById('zone');
+zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('over');});
+zone.addEventListener('dragleave',()=>zone.classList.remove('over'));
+zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('over');addFiles(e.dataTransfer.files);});
+
+async function rdXls(f){
+  return new Promise(res=>{
+    const r=new FileReader();
+    r.onload=e=>{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      res(XLSX.utils.sheet_to_json(ws,{defval:''}));
+    };
+    r.readAsArrayBuffer(f);
+  });
+}
+
+/* ===================== PROCESS ===================== */
+async function proc(){
+  const procBtn=document.getElementById('procBtn');
+  procBtn.textContent='처리 중...';procBtn.disabled=true;
+  S.rows=[];
+  for(const f of S.files){
+    const data=await rdXls(f);
+    for(const row of data){
+      const dt=parseD(row['연도'],row['일자']);
+      if(!dt||!row['거래처'])continue;
+      const{code,cCode,gong,note,rev,wd}=classifyRow(row,dt);
+      S.rows.push({
+        '거래일자':dt,
+        '거래처(가맹점명)':String(row['거래처']||''),
+        '사업자번호':String(row['사업자등록번호']||''),
+        '품명':String(row['품명']||''),
+        '유형':String(row['유형']||''),
+        '공급가액':Number(row['공급가액'])||0,
+        '세액':Number(row['세액'])||0,
+        '봉사료':0,
+        '합계':Number(row['합계'])||0,
+        '차변계정코드':code||'',
+        '대변계정코드':cCode,
+        '공제여부':gong,
+        '거래구분':String(row['구분']||''),
+        _G:String(row['거래처']||''),
+        _A:String(row['업태']||''),
+        _B:String(row['종목']||''),
+        _note:note,_rev:rev,_wd:wd,
+        _amt:Number(row['합계'])||0,
+        _tax:Number(row['세액'])||0,
+        _acctName:ACCT_NAMES[code]||'',
+      });
+    }
+  }
+  procBtn.textContent='변환 시작 →';procBtn.disabled=false;
+  renderRes();
+  go(3);
+}
+
+/* ===================== RENDER RESULTS ===================== */
+function renderRes(){
+  const tot=S.rows.length;
+  const gd=S.rows.filter(r=>r['공제여부']==='공제');
+  const ud=S.rows.filter(r=>r['공제여부']==='불공제');
+  const rv=S.rows.filter(r=>r._rev);
+  const gdAmt=gd.reduce((s,r)=>s+r._amt,0);
+  const udAmt=ud.reduce((s,r)=>s+r._amt,0);
+  const taxAmt=gd.reduce((s,r)=>s+r._tax,0);
+
+  document.getElementById('statsG').innerHTML=`
+    <div class="stat-card"><div class="stat-val">${tot.toLocaleString()}</div><div class="stat-lbl">총 건수</div></div>
+    <div class="stat-card"><div class="stat-val g">${gd.length.toLocaleString()}</div><div class="stat-lbl">공제</div><div class="stat-amt">${fmtN(gdAmt)}원</div></div>
+    <div class="stat-card"><div class="stat-val r">${ud.length.toLocaleString()}</div><div class="stat-lbl">불공제</div><div class="stat-amt">${fmtN(udAmt)}원</div></div>
+    <div class="stat-card"><div class="stat-val a">${rv.length.toLocaleString()}</div><div class="stat-lbl">검토필요</div><div class="stat-amt">공제세액 ${fmtN(taxAmt)}원</div></div>`;
+
+  // Main table
+  const pv=S.rows.slice(0,50);
+  document.getElementById('tbl').innerHTML=`
+    <table>
+      <thead><tr>
+        <th>거래일자</th><th>요일</th><th>거래처</th><th>업태</th><th>종목</th>
+        <th class="td-num">공급가액</th><th class="td-num">세액</th>
+        <th>차변계정</th><th>공제여부</th><th>처리근거</th>
+      </tr></thead>
+      <tbody>${pv.map(r=>`
+        <tr class="${r._rev?'rev-row':''}">
+          <td>${r['거래일자']}</td>
+          <td><span class="chip ${r._wd?'b':'a'}">${r._wd?'평일':'주말'}</span></td>
+          <td title="${r._G}" style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${r._G.slice(0,14)}</td>
+          <td title="${r._A}">${r._A.slice(0,8)}</td>
+          <td title="${r._B}">${r._B.slice(0,8)}</td>
+          <td class="td-num">${fmtN(r['공급가액'])}</td>
+          <td class="td-num">${fmtN(r._tax)}</td>
+          <td>${r['차변계정코드']?`<span class="chip n">${r['차변계정코드']}</span> <span style="font-size:11px;color:var(--gray400)">${r._acctName}</span>`:'<span class="chip r">미정</span>'}</td>
+          <td><span class="chip ${r['공제여부']==='공제'?'g':'r'}">${r['공제여부']}</span></td>
+          <td style="font-size:11px;color:var(--gray400);max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${r._note}">${r._note}</td>
+        </tr>`).join('')}
+        ${tot>50?`<tr class="more-row"><td colspan="10">… 외 ${fmtN(tot-50)}건은 다운로드 파일에서 확인</td></tr>`:''}
+      </tbody>
+    </table>`;
+
+  // Review table
+  if(rv.length>0){
+    document.getElementById('revCard').classList.remove('hidden');
+    document.getElementById('revTbl').innerHTML=`
+      <table>
+        <thead><tr><th>거래일자</th><th>요일</th><th>거래처</th><th>업태</th><th>종목</th><th class="td-num">합계</th><th>검토사유</th></tr></thead>
+        <tbody>${rv.map(r=>`
+          <tr>
+            <td>${r['거래일자']}</td>
+            <td><span class="chip ${r._wd?'b':'a'}">${r._wd?'평일':'주말'}</span></td>
+            <td title="${r._G}">${r._G.slice(0,16)}</td>
+            <td>${r._A}</td><td>${r._B}</td>
+            <td class="td-num">${fmtN(r._amt)}</td>
+            <td style="font-size:11px;color:var(--amber)">${r._note}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+}
+
+/* ===================== DOWNLOAD ===================== */
+function dl(){
+  if(!S.rows.length){alert('먼저 파일을 변환해주세요.');return;}
+
+  const upload=S.rows.map(r=>({
+    '거래일자':r['거래일자'],
+    '거래처(가맹점명)':r['거래처(가맹점명)'],
+    '사업자번호':r['사업자번호'],
+    '품명':r['품명'],
+    '유형':r['유형'],
+    '공급가액':r['공급가액'],
+    '세액':r['세액'],
+    '봉사료':r['봉사료'],
+    '합계':r['합계'],
+    '차변계정코드':r['차변계정코드'],
+    '대변계정코드':r['대변계정코드'],
+    '공제여부':r['공제여부'],
+    '거래구분':r['거래구분'],
+  }));
+
+  const review=S.rows.filter(r=>r._rev).map(r=>({
+    '거래일자':r['거래일자'],
+    '요일':r._wd?'평일':'주말',
+    '거래처(가맹점명)':r._G,
+    '업태':r._A,
+    '종목':r._B,
+    '합계':r._amt,
+    '공제여부':r['공제여부'],
+    '검토사유':r._note,
+  }));
+
+  const summary=[
+    {항목:'사업자구분',내용:S.biz},
+    {항목:'과세유형',내용:S.tax},
+    {항목:'직원유무',내용:S.emp},
+    {항목:'식사비기준',내용:fmtN(S.thr)+'원 초과 시 접대비'},
+    {항목:'총건수',내용:S.rows.length},
+    {항목:'공제건수',내용:S.rows.filter(r=>r['공제여부']==='공제').length},
+    {항목:'불공제건수',내용:S.rows.filter(r=>r['공제여부']==='불공제').length},
+    {항목:'검토필요',내용:S.rows.filter(r=>r._rev).length},
+    {항목:'공급가액합계',내용:S.rows.reduce((s,r)=>s+r['공급가액'],0)},
+    {항목:'세액합계',내용:S.rows.reduce((s,r)=>s+r['세액'],0)},
+    {항목:'공제세액합계',내용:S.rows.filter(r=>r['공제여부']==='공제').reduce((s,r)=>s+r._tax,0)},
+  ];
+
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(upload),'신용카드 매입');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(summary),'집계요약');
+  if(review.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(review),'검토필요');
+
+  const fname=`위하고_카드매입_${S.biz}_${S.tax}_${new Date().toISOString().slice(0,10)}.xlsx`;
+  XLSX.writeFile(wb,fname);
+}
+
+/* ===================== INIT ===================== */
+updateRules();
+</script>
+</body>
+</html>
