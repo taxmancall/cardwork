@@ -259,6 +259,15 @@ tbody td{padding:9px 12px;border-bottom:0.5px solid var(--gray100);color:var(--g
           </div>
         </div>
 
+        <div class="fg" style="margin-bottom:1.25rem">
+          <div class="fg-label">사업장 휴무일 (휴무일 사용분은 불공제)</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input type="date" id="holIn" style="padding:7px 10px;border:1.5px solid var(--gray200);border-radius:8px;font-family:var(--font);font-size:13px">
+            <button class="btn-opt" onclick="addHol()">+ 휴무일 추가</button>
+          </div>
+          <div class="btn-group" id="holList"></div>
+        </div>
+
         <div class="rules-panel" id="rulesPanel"></div>
       </div>
     </div>
@@ -289,6 +298,24 @@ tbody td{padding:9px 12px;border-bottom:0.5px solid var(--gray100);color:var(--g
           <span class="notice-icon">ℹ️</span>
           <span>헤더 컬럼: <b>연도, 일자, 거래처, 구분, 품명, 공급가액, 세액, 합계, 국세청, 업태, 종목, 유형, 차변계정, 대변계정, 사업자등록번호</b></span>
         </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon amber">🧾</div>
+        <div>
+          <div class="card-title">세금계산서 매입 (선택)</div>
+          <div class="card-sub">세금계산서와 중복되는 카드 건은 불공제 · 공급자 사업자번호·합계금액 일치, 날짜 ±3일 이내</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="dropzone" onclick="document.getElementById('ti').click()">
+          <div class="dropzone-icon">🧾</div>
+          <div class="dropzone-main"><span>세금계산서 매입 xlsx</span> 선택</div>
+          <div class="dropzone-sub">위하고 매입 세금계산서 목록 · 복수 선택 가능 · 생략 가능</div>
+        </div>
+        <input type="file" id="ti" accept=".xlsx,.xls" multiple style="display:none" onchange="addTax(this.files)">
+        <div class="file-list" id="tList"></div>
       </div>
     </div>
     <div class="btn-row">
@@ -335,7 +362,8 @@ tbody td{padding:9px 12px;border-bottom:0.5px solid var(--gray100);color:var(--g
 
 <script>
 /* ===================== STATE ===================== */
-const S = { biz:'개인', tax:'과세', emp:'있음', thr:100000, files:[], rows:[] };
+const S = { biz:'개인', tax:'과세', emp:'있음', thr:100000, files:[], taxFiles:[], taxRows:[], hol:[], rows:[] };
+const DUP_DAY_TOL = 3; // 세금계산서 중복 판정 시 허용하는 날짜 차이(일)
 
 /* ===================== 계정 매핑 ===================== */
 const AM = {
@@ -417,11 +445,13 @@ const MED_종목=['약국','병원','의원','치과','한의원','의료','요�
 
 function incArr(arr,str){return arr.some(k=>str.includes(k));}
 function incArrI(arr,str){return arr.some(k=>str.toLowerCase().includes(k.toLowerCase()));}
-function isWeekday(dt){if(!dt)return true;const d=new Date(dt);return d.getDay()!==0&&d.getDay()!==6;}
+function isHoliday(dt){return S.hol.includes(dt);}
+// 휴무일이면 영업일이 아닌 것으로 판단
+function isWeekday(dt){if(!dt)return true;if(isHoliday(dt))return false;const d=new Date(dt);return d.getDay()!==0&&d.getDay()!==6;}
 
 function ct(){if(S.emp==='있음')return'emp';if(S.biz==='법인')return'corp';return'indiv';}
 
-function classifyRow(row,dt){
+function classifyRow(row,dt,dup){
   const G=String(row['거래처']||'').trim();
   const A=String(row['업태']||'').trim();
   const B=String(row['종목']||'').trim();
@@ -485,7 +515,14 @@ function classifyRow(row,dt){
   else if(code===813) gong='불공제';
   else gong=(NTS==='공제')?'공제':'불공제';
 
-  return{code,cCode,gong,note,rev,wd};
+  // 추가 규칙: 휴무일 사용분 → 불공제, 세금계산서 중복 → 카드 불공제
+  const hol=isHoliday(dt);
+  const reasons=[];
+  if(hol){gong='불공제';reasons.push('휴무일 사용→불공제');}
+  if(dup){gong='불공제';reasons.push('세금계산서 중복→불공제');}
+  if(reasons.length)note=reasons.join(' / ')+(note?' ['+note+']':'');
+
+  return{code,cCode,gong,note,rev,wd,hol,dup};
 }
 
 /* ===================== PARSE DATE ===================== */
@@ -497,6 +534,47 @@ function parseD(y,d){
   return ys+'-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0');
 }
 function fmtN(n){return Number(n).toLocaleString('ko-KR');}
+
+/* ===================== 휴무일 / 세금계산서 ===================== */
+function addHol(){
+  const v=document.getElementById('holIn').value;
+  if(!v)return;
+  if(!S.hol.includes(v))S.hol.push(v);
+  S.hol.sort();renderHol();updateRules();
+}
+function rmHol(i){S.hol.splice(i,1);renderHol();updateRules();}
+function renderHol(){
+  document.getElementById('holList').innerHTML=S.hol.length
+    ?S.hol.map((d,i)=>`<span class="chip r" style="cursor:pointer;font-size:12px;padding:4px 10px" onclick="rmHol(${i})">${d} ✕</span>`).join('')
+    :'<span style="font-size:12px;color:var(--gray400)">등록된 휴무일 없음</span>';
+}
+function addTax(fs){S.taxFiles=[...S.taxFiles,...Array.from(fs)];renderTL();}
+function rmT(i){S.taxFiles.splice(i,1);renderTL();}
+function renderTL(){
+  document.getElementById('tList').innerHTML=S.taxFiles.map((f,i)=>
+    `<div class="file-item">
+      <span class="file-icon">🧾</span>
+      <span class="file-name">${f.name}</span>
+      <span class="file-size">${(f.size/1024).toFixed(0)} KB</span>
+      <span class="file-rm" onclick="rmT(${i})">✕</span>
+    </div>`).join('');
+}
+// 세금계산서/카드 열 값 헬퍼
+function pickV(row,keys){for(const k of keys){const v=row[k];if(v!==undefined&&String(v).trim()!=='')return v;}return '';}
+function toBizNo(v){return String(v||'').replace(/\D/g,'');}
+function normDate(v){
+  if(typeof v==='number'&&v>20000){return new Date(Math.round((v-25569)*864e5)).toISOString().slice(0,10);}
+  const s=String(v||'').replace(/\D/g,'');
+  return s.length===8?s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8):null;
+}
+function dayDiff(a,b){return Math.abs(new Date(a+'T00:00:00Z')-new Date(b+'T00:00:00Z'))/864e5;}
+// 세금계산서와 중복: 사업자번호 + 합계금액 일치, 날짜 차이 DUP_DAY_TOL 이내 (세금계산서 1건은 카드 1건에만 매칭)
+function findDup(dt,biz,amt){
+  if(!biz||!amt)return false;
+  const c=S.taxRows.find(t=>!t.used&&t.biz===biz&&t.amt===amt&&dayDiff(t.dt,dt)<=DUP_DAY_TOL);
+  if(c){c.used=true;return true;}
+  return false;
+}
 
 /* ===================== UI HELPERS ===================== */
 function pick(btn){
@@ -559,6 +637,10 @@ function updateRules(){
       ${mkSec('인터넷 구입',onlineRows)}
       ${mkSec('세금/보험료 직납',taxRows)}
       ${mkSec('공통 계정',commonRows)}
+      ${mkSec('휴무일·세금계산서 중복',[
+        ['r','불공제','등록된 휴무일 사용분 → 불공제'],
+        ['r','불공제','세금계산서와 중복되는 카드 건 → 불공제'],
+      ])}
     </div>`;
 }
 
@@ -611,12 +693,24 @@ async function proc(){
   const procBtn=document.getElementById('procBtn');
   procBtn.textContent='처리 중...';procBtn.disabled=true;
   S.rows=[];
+  // 세금계산서 매입 자료 먼저 읽기 (카드 중복 판정용)
+  S.taxRows=[];
+  for(const f of S.taxFiles){
+    const data=await rdXls(f);
+    for(const row of data){
+      const dt=normDate(pickV(row,['작성일자','일자','거래일자']));
+      const biz=toBizNo(pickV(row,['공급자사업자등록번호','거래처사업자등록번호','사업자등록번호','사업자번호']));
+      const amt=Number(String(pickV(row,['합계금액','합계'])).replace(/,/g,''))||0;
+      if(dt&&biz&&amt)S.taxRows.push({dt,biz,amt,used:false});
+    }
+  }
   for(const f of S.files){
     const data=await rdXls(f);
     for(const row of data){
       const dt=parseD(row['연도'],row['일자']);
       if(!dt||!row['거래처'])continue;
-      const{code,cCode,gong,note,rev,wd}=classifyRow(row,dt);
+      const dup=findDup(dt,toBizNo(row['사업자등록번호']),Number(row['합계'])||0);
+      const{code,cCode,gong,note,rev,wd,hol}=classifyRow(row,dt,dup);
       S.rows.push({
         '거래일자':dt,
         '거래처(가맹점명)':String(row['거래처']||''),
@@ -634,7 +728,7 @@ async function proc(){
         _G:String(row['거래처']||''),
         _A:String(row['업태']||''),
         _B:String(row['종목']||''),
-        _note:note,_rev:rev,_wd:wd,
+        _note:note,_rev:rev,_wd:wd,_hol:hol,_dup:dup,
         _amt:Number(row['합계'])||0,
         _tax:Number(row['세액'])||0,
         _acctName:ACCT_NAMES[code]||'',
@@ -674,7 +768,7 @@ function renderRes(){
       <tbody>${pv.map(r=>`
         <tr class="${r._rev?'rev-row':''}">
           <td>${r['거래일자']}</td>
-          <td><span class="chip ${r._wd?'b':'a'}">${r._wd?'평일':'주말'}</span></td>
+          <td><span class="chip ${r._wd&&!r._hol?'b':'a'}">${r._hol?'휴무':(r._wd?'평일':'주말')}</span></td>
           <td title="${r._G}" style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${r._G.slice(0,14)}</td>
           <td title="${r._A}">${r._A.slice(0,8)}</td>
           <td title="${r._B}">${r._B.slice(0,8)}</td>
@@ -697,7 +791,7 @@ function renderRes(){
         <tbody>${rv.map(r=>`
           <tr>
             <td>${r['거래일자']}</td>
-            <td><span class="chip ${r._wd?'b':'a'}">${r._wd?'평일':'주말'}</span></td>
+            <td><span class="chip ${r._wd&&!r._hol?'b':'a'}">${r._hol?'휴무':(r._wd?'평일':'주말')}</span></td>
             <td title="${r._G}">${r._G.slice(0,16)}</td>
             <td>${r._A}</td><td>${r._B}</td>
             <td class="td-num">${fmtN(r._amt)}</td>
@@ -730,7 +824,7 @@ function dl(){
 
   const review=S.rows.filter(r=>r._rev).map(r=>({
     '거래일자':r['거래일자'],
-    '요일':r._wd?'평일':'주말',
+    '요일':r._hol?'휴무':(r._wd?'평일':'주말'),
     '거래처(가맹점명)':r._G,
     '업태':r._A,
     '종목':r._B,
@@ -744,6 +838,9 @@ function dl(){
     {항목:'과세유형',내용:S.tax},
     {항목:'직원유무',내용:S.emp},
     {항목:'식사비기준',내용:fmtN(S.thr)+'원 초과 시 접대비'},
+    {항목:'휴무일 등록',내용:S.hol.length?S.hol.length+'일 ('+S.hol.join(', ')+')':'없음'},
+    {항목:'휴무일 사용 불공제건수',내용:S.rows.filter(r=>r._hol).length},
+    {항목:'세금계산서 중복 불공제건수',내용:S.rows.filter(r=>r._dup).length},
     {항목:'총건수',내용:S.rows.length},
     {항목:'공제건수',내용:S.rows.filter(r=>r['공제여부']==='공제').length},
     {항목:'불공제건수',내용:S.rows.filter(r=>r['공제여부']==='불공제').length},
@@ -763,6 +860,7 @@ function dl(){
 }
 
 /* ===================== INIT ===================== */
+renderHol();
 updateRules();
 </script>
 </body>
