@@ -260,7 +260,17 @@ tbody td{padding:9px 12px;border-bottom:0.5px solid var(--gray100);color:var(--g
         </div>
 
         <div class="fg" style="margin-bottom:1.25rem">
-          <div class="fg-label">사업장 휴무일 (휴무일 사용분은 불공제)</div>
+          <div class="fg-label">사업장 정기 휴무 요일 (해당 요일 사용분은 불공제)</div>
+          <div class="btn-group" id="dowBtns">
+            <button class="btn-opt thr-btn" data-dow="0" onclick="toggleDow(0)">일</button>
+            <button class="btn-opt thr-btn" data-dow="1" onclick="toggleDow(1)">월</button>
+            <button class="btn-opt thr-btn" data-dow="2" onclick="toggleDow(2)">화</button>
+            <button class="btn-opt thr-btn" data-dow="3" onclick="toggleDow(3)">수</button>
+            <button class="btn-opt thr-btn" data-dow="4" onclick="toggleDow(4)">목</button>
+            <button class="btn-opt thr-btn" data-dow="5" onclick="toggleDow(5)">금</button>
+            <button class="btn-opt thr-btn" data-dow="6" onclick="toggleDow(6)">토</button>
+          </div>
+          <div class="fg-label" style="margin-top:6px">특정 휴무일 (공휴일·임시 휴무)</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <input type="date" id="holIn" style="padding:7px 10px;border:1.5px solid var(--gray200);border-radius:8px;font-family:var(--font);font-size:13px">
             <button class="btn-opt" onclick="addHol()">+ 휴무일 추가</button>
@@ -362,7 +372,7 @@ tbody td{padding:9px 12px;border-bottom:0.5px solid var(--gray100);color:var(--g
 
 <script>
 /* ===================== STATE ===================== */
-const S = { biz:'개인', tax:'과세', emp:'있음', thr:100000, files:[], taxFiles:[], taxRows:[], hol:[], rows:[] };
+const S = { biz:'개인', tax:'과세', emp:'있음', thr:100000, files:[], taxFiles:[], taxRows:[], hol:[], closedDow:[0,6], rows:[] }; // closedDow: 정기 휴무 요일(0=일 ~ 6=토), 기본 토·일
 const DUP_DAY_TOL = 3; // 세금계산서 중복 판정 시 허용하는 날짜 차이(일)
 
 /* ===================== 계정 매핑 ===================== */
@@ -446,8 +456,13 @@ const MED_종목=['약국','병원','의원','치과','한의원','의료','요�
 function incArr(arr,str){return arr.some(k=>str.includes(k));}
 function incArrI(arr,str){return arr.some(k=>str.toLowerCase().includes(k.toLowerCase()));}
 function isHoliday(dt){return S.hol.includes(dt);}
-// 휴무일이면 영업일이 아닌 것으로 판단
-function isWeekday(dt){if(!dt)return true;if(isHoliday(dt))return false;const d=new Date(dt);return d.getDay()!==0&&d.getDay()!==6;}
+// 정기 휴무 요일 또는 등록된 휴무일이면 영업일이 아닌 것으로 판단
+function isWeekday(dt){
+  if(!dt)return true;
+  if(isHoliday(dt))return false;
+  const d=new Date(dt+'T00:00:00');
+  return !S.closedDow.includes(d.getDay());
+}
 
 function ct(){if(S.emp==='있음')return'emp';if(S.biz==='법인')return'corp';return'indiv';}
 
@@ -543,6 +558,15 @@ function addHol(){
   S.hol.sort();renderHol();updateRules();
 }
 function rmHol(i){S.hol.splice(i,1);renderHol();updateRules();}
+function toggleDow(d){
+  S.closedDow=S.closedDow.includes(d)?S.closedDow.filter(x=>x!==d):[...S.closedDow,d];
+  renderDow();updateRules();
+}
+function renderDow(){
+  document.querySelectorAll('#dowBtns [data-dow]').forEach(b=>{
+    b.classList.toggle('sel',S.closedDow.includes(Number(b.dataset.dow)));
+  });
+}
 function renderHol(){
   document.getElementById('holList').innerHTML=S.hol.length
     ?S.hol.map((d,i)=>`<span class="chip r" style="cursor:pointer;font-size:12px;padding:4px 10px" onclick="rmHol(${i})">${d} ✕</span>`).join('')
@@ -638,7 +662,8 @@ function updateRules(){
       ${mkSec('세금/보험료 직납',taxRows)}
       ${mkSec('공통 계정',commonRows)}
       ${mkSec('휴무일·세금계산서 중복',[
-        ['r','불공제','등록된 휴무일 사용분 → 불공제'],
+        ['r','불공제',`정기 휴무 요일(${S.closedDow.length?S.closedDow.slice().sort().map(d=>'일월화수목금토'[d]).join('·'):'없음'}) 사용분 → 불공제`],
+        ['r','불공제','등록된 특정 휴무일 사용분 → 불공제'],
         ['r','불공제','세금계산서와 중복되는 카드 건 → 불공제'],
       ])}
     </div>`;
@@ -838,6 +863,7 @@ function dl(){
     {항목:'과세유형',내용:S.tax},
     {항목:'직원유무',내용:S.emp},
     {항목:'식사비기준',내용:fmtN(S.thr)+'원 초과 시 접대비'},
+    {항목:'정기 휴무 요일',내용:S.closedDow.length?S.closedDow.slice().sort().map(d=>'일월화수목금토'[d]).join('·'):'없음'},
     {항목:'휴무일 등록',내용:S.hol.length?S.hol.length+'일 ('+S.hol.join(', ')+')':'없음'},
     {항목:'휴무일 사용 불공제건수',내용:S.rows.filter(r=>r._hol).length},
     {항목:'세금계산서 중복 불공제건수',내용:S.rows.filter(r=>r._dup).length},
@@ -860,6 +886,7 @@ function dl(){
 }
 
 /* ===================== INIT ===================== */
+renderDow();
 renderHol();
 updateRules();
 </script>
