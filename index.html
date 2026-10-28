@@ -36,6 +36,7 @@
   --shadow-lg: 0 4px 6px rgba(0,0,0,0.05), 0 10px 40px rgba(0,0,0,0.1);
 }
 *{box-sizing:border-box;margin:0;padding:0;}
+.acct-sel{font-size:11px;padding:3px 4px;border:1px solid var(--gray200);border-radius:6px;max-width:140px;background:var(--white);color:var(--gray700);}
 html{background:var(--gray50);font-family:var(--font);color:var(--gray800);}
 body{min-height:100vh;}
 
@@ -191,7 +192,7 @@ tbody td{padding:9px 12px;border-bottom:0.5px solid var(--gray100);color:var(--g
       <div class="app-logo-sub">국세청 자료 → 위하고 업로드 양식</div>
     </div>
   </div>
-  <div class="header-badge">v4.2 · 2026 · 홈택스 입력</div>
+  <div class="header-badge">v4.3 · 2026 · 홈택스 입력</div>
 </header>
 
 <main class="main">
@@ -478,10 +479,20 @@ const MED_종목=['약국','병원','의원','치과','한의원','의료','요�
 function incArr(arr,str){return arr.some(k=>str.includes(k));}
 function incArrI(arr,str){return arr.some(k=>str.toLowerCase().includes(k.toLowerCase()));}
 function isHoliday(dt){return S.hol.includes(dt);}
-// 정기 휴무 요일 또는 등록된 휴무일이면 영업일이 아닌 것으로 판단
+// 법정공휴일·대체공휴일 (빨간날) — 2025~2026 내장
+const KR_HOLIDAYS=new Set([
+  '2025-01-01','2025-01-27','2025-01-28','2025-01-29','2025-01-30','2025-03-01','2025-03-03',
+  '2025-05-05','2025-05-06','2025-06-03','2025-06-06','2025-08-15','2025-10-03','2025-10-05',
+  '2025-10-06','2025-10-07','2025-10-08','2025-10-09','2025-12-25',
+  '2026-01-01','2026-02-16','2026-02-17','2026-02-18','2026-03-01','2026-03-02','2026-05-05',
+  '2026-05-24','2026-05-25','2026-06-03','2026-06-06','2026-07-17','2026-08-15','2026-08-17',
+  '2026-09-24','2026-09-25','2026-09-26','2026-10-03','2026-10-05','2026-10-09','2026-12-25',
+]);
+// 정기 휴무 요일·등록 휴무일·법정공휴일(빨간날)이면 영업일이 아닌 것으로 판단
 function isWeekday(dt){
   if(!dt)return true;
   if(isHoliday(dt))return false;
+  if(KR_HOLIDAYS.has(dt))return false;
   const d=new Date(dt+'T00:00:00');
   return !S.closedDow.includes(d.getDay());
 }
@@ -505,8 +516,9 @@ function classifyRow(row,dt,dup){
 
   // 2순위: 온라인 PG/쇼핑몰 상호
   else if(incArrI(ONLINE_VENDOR,G)){
-    if(!wd){code=830;rev=true;note='인터넷구입(비영업일)→소모품비(개인소비 검토)';}
-    else{code=830;note='인터넷구입(영업일)→소모품비';}
+    code=830;
+    if(!wd){if(!isEx)gonOver='불공제';note='인터넷구입(빨간날/휴무)→불공제·소모품비';}
+    else{if(!isEx)gonOver='공제';note='인터넷구입(영업일)→공제·소모품비';}
   }
 
   // 3순위: 업태/종목
@@ -527,8 +539,9 @@ function classifyRow(row,dt,dup){
     note='편의점→'+(C==='emp'?'복리후생비':'소모품비');
   }
   else if(incArr(ONLINE_업태,A)){
-    if(!wd){code=830;rev=true;note='전자상거래(비영업일)→소모품비(개인소비 검토)';}
-    else{code=830;note='전자상거래(영업일)→소모품비';}
+    code=830;
+    if(!wd){if(!isEx)gonOver='불공제';note='전자상거래(빨간날/휴무)→불공제·소모품비';}
+    else{if(!isEx)gonOver='공제';note='전자상거래(영업일)→공제·소모품비';}
   }
   else if(incArr(MED_종목,B)){
     if(C==='emp'){code=811;note='의료/약국→복리후생비';}
@@ -809,11 +822,12 @@ async function proc(){
       const dup=findDup(dt,toBizNo(row['사업자등록번호']),Number(row['합계'])||0);
       const{code,cCode,gong,note,rev,wd,hol}=classifyRow(row,dt,dup);
       S.rows.push({
+        _i:S.rows.length,
         '거래일자':dt,
         '거래처(가맹점명)':row['거래처'],
         '사업자번호':row['사업자등록번호'],
-        '품명':'',
-        '유형':gong==='공제'?'카과':'일반',
+        '품명':row['종목']||row['업태']||'',
+        '유형':HT_GUBUN[row['가맹점유형']]||'일반',
         '공급가액':row['공급가액'],
         '세액':row['세액'],
         '봉사료':row['비과세'],
@@ -821,7 +835,7 @@ async function proc(){
         '차변계정코드':code||'',
         '대변계정코드':cCode,
         '공제여부':gong,
-        '거래구분':HT_GUBUN[row['가맹점유형']]||row['가맹점유형'],
+        '거래구분':(Number(row['합계'])<0?'취소':'승인'),
         _G:row['거래처'],
         _A:row['업태'],
         _B:row['종목'],
@@ -908,7 +922,7 @@ function renderRes(){
           <td title="${r._B}">${r._B.slice(0,8)}</td>
           <td class="td-num">${fmtN(r['공급가액'])}</td>
           <td class="td-num">${fmtN(r._tax)}</td>
-          <td>${r['차변계정코드']?`<span class="chip n">${r['차변계정코드']}</span> <span style="font-size:11px;color:var(--gray400)">${r._acctName}</span>`:'<span class="chip r">미정</span>'}</td>
+          <td><select class="acct-sel" onchange="setAcct(${r._i},this.value)">${acctOpts(r['차변계정코드'])}</select></td>
           <td><span class="chip ${r['공제여부']==='공제'?'g':'r'}">${r['공제여부']}</span></td>
           <td style="font-size:11px;color:var(--gray400);max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${r._note}">${r._note}</td>
         </tr>`).join('')}
@@ -921,7 +935,7 @@ function renderRes(){
     document.getElementById('revCard').classList.remove('hidden');
     document.getElementById('revTbl').innerHTML=`
       <table>
-        <thead><tr><th>거래일자</th><th>요일</th><th>거래처</th><th>업태</th><th>종목</th><th class="td-num">합계</th><th>검토사유</th></tr></thead>
+        <thead><tr><th>거래일자</th><th>요일</th><th>거래처</th><th>업태</th><th>종목</th><th class="td-num">합계</th><th>차변계정</th><th>검토사유</th></tr></thead>
         <tbody>${rv.map(r=>`
           <tr>
             <td>${r['거래일자']}</td>
@@ -929,6 +943,7 @@ function renderRes(){
             <td title="${r._G}">${r._G.slice(0,16)}</td>
             <td>${r._A}</td><td>${r._B}</td>
             <td class="td-num">${fmtN(r._amt)}</td>
+            <td><select class="acct-sel" onchange="setAcct(${r._i},this.value)">${acctOpts(r['차변계정코드'])}</select></td>
             <td style="font-size:11px;color:var(--amber)">${r._note}</td>
           </tr>`).join('')}
         </tbody>
@@ -951,9 +966,16 @@ function periodLabel(){
 function filePrefix(){return ((S.co?S.co+' ':'')+(S.period?S.period+' ':''));}
 function cardFname(key){return safeName(filePrefix()+key)+'.xlsx';}
 function upRow(r){
-  const o={};UP_HEADERS.forEach(h=>o[h]=r[h]);return o;
+  const o={};UP_HEADERS.forEach(h=>o[h]=r[h]);
+  o['거래일자']=String(r['거래일자']||'').replace(/-/g,''); // 위하고 양식: 하이픈 제외 (예 20260922)
+  return o;
 }
 function safeName(s){return String(s).replace(/[\\/:*?"<>|]/g,'').trim()||'카드';}
+/* 결과 화면에서 차변계정 직접 수정 */
+function acctOpts(cur){
+  return Object.keys(ACCT_NAMES).sort((a,b)=>a-b).map(c=>`<option value="${c}" ${String(c)===String(cur)?'selected':''}>${c} ${ACCT_NAMES[c]}</option>`).join('');
+}
+function setAcct(i,v){const r=S.rows[i];if(!r)return;r['차변계정코드']=Number(v);r._acctName=ACCT_NAMES[v]||'';}
 function cardWb(key){
   const rows=S.rows.filter(r=>r._cardKey===key).map(upRow);
   const wb=XLSX.utils.book_new();
