@@ -191,7 +191,7 @@ tbody td{padding:9px 12px;border-bottom:0.5px solid var(--gray100);color:var(--g
       <div class="app-logo-sub">국세청 자료 → 위하고 업로드 양식</div>
     </div>
   </div>
-  <div class="header-badge">v4.1 · 2026 · 홈택스 입력</div>
+  <div class="header-badge">v4.2 · 2026 · 홈택스 입력</div>
 </header>
 
 <main class="main">
@@ -423,7 +423,7 @@ const ACCT_NAMES = {
   829:'사무용품비',830:'소모품비',831:'지급수수료',836:'잡비',
   511:'복리후생비(제)',512:'여비교통비(제)',513:'접대비(제)',
   521:'보험료(제)',522:'차량유지비(제)',530:'소모품비(제)',531:'지급수수료(제)',
-  253:'미지급금',101:'현금',103:'보통예금',
+  253:'미지급금',101:'현금',103:'보통예금',933:'기부금',
 };
 
 function mN(n){
@@ -441,7 +441,12 @@ const DIRECT=[
   {match:['국민건강보험'],code:817,gon:'불공제',note:'건강보험료→세금과공과금'},
   {match:['국민연금공단','국민연금'],code:817,gon:'불공제',note:'국민연금→세금과공과금'},
   {match:['근로복지공단'],code:817,gon:'불공제',note:'고용/산재보험→세금과공과금'},
+  {match:['특별시','광역시','시청','군청','구청','세무서','등기소','법원'],code:817,gon:'불공제',note:'지자체/관공서→세금과공과금(과태료·수수료)'},
+  {match:['롯데카드','신한카드','비씨카드','국민카드','삼성카드','현대카드','하나카드','우리카드','농협카드','카드 주식회사'],code:831,gon:'불공제',note:'카드사 수수료/연회비→지급수수료'},
+  {match:['우정사업본부','우체국'],code:814,gon:'불공제',note:'우편요금→통신비(면세)'},
+  {match:['적십자'],code:933,gon:'불공제',note:'적십자회비→기부금'},
 ];
+const TELECOM_상호=['케이티','프리텔레콤','텔레콤','텔링크','유플러스','엘지헬로비전','브로드밴드','미디어로그','스테이지파이브','케이티엠모바일'];
 
 // 2순위: 인터넷구입 거래처(온라인 PG/쇼핑몰)
 const ONLINE_VENDOR=[
@@ -466,7 +471,7 @@ const INS_업태=['보험업'];
 const INS_종목=['생명보험','손해보험','화재보험','자동차보험','보험'];
 const EDU_업태=['교육서비스업','교육'];
 const EDU_종목=['학원','교습소','직업훈련','평생교육'];
-const CONV_종목=['편의점','슈퍼마켓','슈퍼','마트'];
+const CONV_종목=['편의점','슈퍼마켓','슈퍼','마트','백화점','종합소매','잡화'];
 const ONLINE_업태=['전자상거래','통신판매','소셜커머스','온라인쇼핑'];
 const MED_종목=['약국','병원','의원','치과','한의원','의료','요양원'];
 
@@ -500,7 +505,7 @@ function classifyRow(row,dt,dup){
 
   // 2순위: 온라인 PG/쇼핑몰 상호
   else if(incArrI(ONLINE_VENDOR,G)){
-    if(!wd){code=null;rev=true;note='인터넷구입(비영업일)→검토필요(개인소비 확인)';}
+    if(!wd){code=830;rev=true;note='인터넷구입(비영업일)→소모품비(개인소비 검토)';}
     else{code=830;note='인터넷구입(영업일)→소모품비';}
   }
 
@@ -514,7 +519,7 @@ function classifyRow(row,dt,dup){
   else if(incArr(PARK_종목,B)||incArrI(PARK_상호,G)){code=822;note='주차/통행료→차량유지비';}
   else if(incArr(FUEL_종목,B)){code=822;note='주유→차량유지비';}
   else if(incArrI(TRANS_상호,G)||incArr(TRANS_업태,A)||incArr(TRANS_종목,B)){code=812;note='교통→여비교통비';}
-  else if(incArr(TELECOM_업태,A)||incArr(TELECOM_종목,B)){code=814;note='통신→통신비';}
+  else if(incArr(TELECOM_업태,A)||incArr(TELECOM_종목,B)||incArrI(TELECOM_상호,G)){code=814;note='통신→통신비';}
   else if(incArr(INS_업태,A)||incArr(INS_종목,B)){code=821;note='보험→보험료';}
   else if(incArr(EDU_업태,A)||incArr(EDU_종목,B)){code=825;note='교육→교육훈련비';}
   else if(incArr(CONV_종목,B)){
@@ -522,18 +527,18 @@ function classifyRow(row,dt,dup){
     note='편의점→'+(C==='emp'?'복리후생비':'소모품비');
   }
   else if(incArr(ONLINE_업태,A)){
-    if(!wd){code=null;rev=true;note='전자상거래(비영업일)→검토필요';}
+    if(!wd){code=830;rev=true;note='전자상거래(비영업일)→소모품비(개인소비 검토)';}
     else{code=830;note='전자상거래(영업일)→소모품비';}
   }
   else if(incArr(MED_종목,B)){
     if(C==='emp'){code=811;note='의료/약국→복리후생비';}
-    else{rev=true;note='의료/약국→검토필요(업무관련성 확인)';}
+    else{code=811;rev=true;note='의료/약국→복리후생비(업무관련성 검토)';}
   }
 
   // 4순위: 기존 차변계정명 변환
   else{
     code=mN(DC);
-    if(code===null){rev=true;note='검토필요: 업태['+A+'] 종목['+B+']';}
+    if(code===null){code=830;rev=true;note='자동분류 불가→소모품비(검토): 업태['+A+'] 종목['+B+']';}
     else{
       if(code===811&&C!=='emp'){code=813;note='복리후생비→기업업무추진비(직원없음)';}
       else note='기존계정변환('+DC+')';
