@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>카드매입 위하고 변환기</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -190,7 +191,7 @@ tbody td{padding:9px 12px;border-bottom:0.5px solid var(--gray100);color:var(--g
       <div class="app-logo-sub">국세청 자료 → 위하고 업로드 양식</div>
     </div>
   </div>
-  <div class="header-badge">v3.0 · 2026</div>
+  <div class="header-badge">v4.0 · 2026 · 홈택스 입력</div>
 </header>
 
 <main class="main">
@@ -293,20 +294,20 @@ tbody td{padding:9px 12px;border-bottom:0.5px solid var(--gray100);color:var(--g
         <div class="card-header-icon blue">📂</div>
         <div>
           <div class="card-title">파일 업로드</div>
-          <div class="card-sub">위하고에서 다운받은 신용카드 매입 xlsx 파일 (거래처별 복수 선택 가능)</div>
+          <div class="card-sub">홈택스 [조회/발급 → 사업용신용카드 → 매입세액 공제 확인/변경]에서 내려받은 엑셀 (거래처별 복수 선택 가능)</div>
         </div>
       </div>
       <div class="card-body">
         <div class="dropzone" id="zone" onclick="document.getElementById('fi').click()">
           <div class="dropzone-icon">📥</div>
           <div class="dropzone-main"><span>클릭하거나 파일을 드래그</span>하세요</div>
-          <div class="dropzone-sub">.xlsx 파일 · 복수 선택 가능 · 거래처별 파일 한꺼번에 올리기</div>
+          <div class="dropzone-sub">.xls / .xlsx · 복수 선택 가능 · 분기별 파일 한꺼번에 올리기</div>
         </div>
         <input type="file" id="fi" accept=".xlsx,.xls" multiple style="display:none" onchange="addFiles(this.files)">
         <div class="file-list" id="fList"></div>
         <div class="notice">
           <span class="notice-icon">ℹ️</span>
-          <span>헤더 컬럼: <b>연도, 일자, 거래처, 구분, 품명, 공급가액, 세액, 합계, 국세청, 업태, 종목, 유형, 차변계정, 대변계정, 사업자등록번호</b></span>
+          <span>헤더 컬럼: <b>승인일자, 카드사, 카드번호, 가맹점사업자번호, 가맹점명, 공급가액, 세액, 비과세, 합계, 가맹점유형, 업태, 업종, 공제여부결정, 비고</b></span>
         </div>
       </div>
     </div>
@@ -339,12 +340,24 @@ tbody td{padding:9px 12px;border-bottom:0.5px solid var(--gray100);color:var(--g
     <div class="stats-grid" id="statsG"></div>
     <div class="card">
       <div class="card-header">
+        <div class="card-header-icon blue">💳</div>
+        <div style="flex:1">
+          <div class="card-title">카드별 위하고 업로드 파일</div>
+          <div class="card-sub">위하고 업로드는 카드번호별로 · 파일명 "카드사 카드번호.xlsx"</div>
+        </div>
+        <button class="btn dl" onclick="dlAll()">📦 전체 ZIP 다운로드</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="table-wrap" id="cardTbl"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
         <div class="card-header-icon green">✅</div>
         <div style="flex:1">
           <div class="card-title">변환 결과</div>
           <div class="card-sub">노란색 행 = 검토 필요 · 미리보기 최대 50건</div>
         </div>
-        <button class="btn dl" onclick="dl()">📥 다운로드 (.xlsx)</button>
       </div>
       <div class="card-body" style="padding:0">
         <div class="table-wrap" id="tbl"></div>
@@ -364,7 +377,7 @@ tbody td{padding:9px 12px;border-bottom:0.5px solid var(--gray100);color:var(--g
     </div>
     <div class="btn-row" style="justify-content:space-between;align-items:center">
       <button class="btn prev" onclick="go(2)">← 파일 재업로드</button>
-      <button class="btn dl dl-big" onclick="dl()">📥 위하고 양식 다운로드</button>
+      <button class="btn dl dl-big" onclick="dlAll()">📦 카드별 위하고 양식 ZIP 다운로드</button>
     </div>
   </div>
 
@@ -713,6 +726,55 @@ async function rdXls(f){
   });
 }
 
+/* 홈택스 '사업용신용카드 매입세액 공제 확인/변경' 엑셀 파싱 (헤더 행 자동 탐색) */
+const HT_GUBUN={'법인사업자':'법인','일반과세자':'일반','간이과세자':'간이','면세사업자':'면세'};
+function cleanCo(s){return String(s||'').replace(/주식회사|\(주\)|（주）|㈜/g,'').trim();}
+async function rdHometax(f){
+  return new Promise(res=>{
+    const r=new FileReader();
+    r.onload=e=>{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      let hi=-1;
+      for(let i=0;i<Math.min(aoa.length,15);i++){
+        const t=(aoa[i]||[]).map(c=>String(c).trim());
+        if(t.includes('승인일자')&&t.includes('가맹점명')){hi=i;break;}
+      }
+      if(hi<0){res([]);return;}
+      const H=aoa[hi].map(c=>String(c).trim());
+      const col={};H.forEach((h,j)=>{if(h&&col[h]===undefined)col[h]=j;});
+      const get=(a,n)=>{const j=col[n];return j===undefined?'':a[j];};
+      const rows=[];
+      for(let i=hi+1;i<aoa.length;i++){
+        const a=aoa[i]||[];
+        const dt=normDate(get(a,'승인일자'));
+        const name=String(get(a,'가맹점명')||'').trim();
+        if(!dt||!name)continue;
+        rows.push({
+          _dt:dt,
+          _co:cleanCo(get(a,'카드사')),
+          _cardNo:String(get(a,'카드번호')||'').trim(),
+          '거래처':name,
+          '업태':String(get(a,'업태')||'').trim(),
+          '종목':String(get(a,'업종')||'').trim(),
+          '차변계정':'','대변계정':'',
+          '국세청':String(get(a,'공제여부결정')||'').trim(),
+          '사업자등록번호':String(get(a,'가맹점사업자번호')||'').trim(),
+          '공급가액':Number(String(get(a,'공급가액')).replace(/,/g,''))||0,
+          '세액':Number(String(get(a,'세액')).replace(/,/g,''))||0,
+          '비과세':Number(String(get(a,'비과세')).replace(/,/g,''))||0,
+          '합계':Number(String(get(a,'합계')).replace(/,/g,''))||0,
+          '가맹점유형':String(get(a,'가맹점유형')||'').trim(),
+          '비고':String(get(a,'비고')||'').trim(),
+        });
+      }
+      res(rows);
+    };
+    r.readAsArrayBuffer(f);
+  });
+}
+
 /* ===================== PROCESS ===================== */
 async function proc(){
   const procBtn=document.getElementById('procBtn');
@@ -729,38 +791,48 @@ async function proc(){
       if(dt&&biz&&amt)S.taxRows.push({dt,biz,amt,used:false});
     }
   }
+  let parsedAny=false;
   for(const f of S.files){
-    const data=await rdXls(f);
+    const data=await rdHometax(f);
+    if(data.length)parsedAny=true;
     for(const row of data){
-      const dt=parseD(row['연도'],row['일자']);
-      if(!dt||!row['거래처'])continue;
+      const dt=row._dt;
       const dup=findDup(dt,toBizNo(row['사업자등록번호']),Number(row['합계'])||0);
       const{code,cCode,gong,note,rev,wd,hol}=classifyRow(row,dt,dup);
       S.rows.push({
         '거래일자':dt,
-        '거래처(가맹점명)':String(row['거래처']||''),
-        '사업자번호':String(row['사업자등록번호']||''),
-        '품명':String(row['품명']||''),
-        '유형':String(row['유형']||''),
-        '공급가액':Number(row['공급가액'])||0,
-        '세액':Number(row['세액'])||0,
-        '봉사료':0,
-        '합계':Number(row['합계'])||0,
+        '거래처(가맹점명)':row['거래처'],
+        '사업자번호':row['사업자등록번호'],
+        '품명':'',
+        '유형':gong==='공제'?'카과':'일반',
+        '공급가액':row['공급가액'],
+        '세액':row['세액'],
+        '봉사료':row['비과세'],
+        '합계':row['합계'],
         '차변계정코드':code||'',
         '대변계정코드':cCode,
         '공제여부':gong,
-        '거래구분':String(row['구분']||''),
-        _G:String(row['거래처']||''),
-        _A:String(row['업태']||''),
-        _B:String(row['종목']||''),
-        _note:note,_rev:rev,_wd:wd,_hol:hol,_dup:dup,
-        _amt:Number(row['합계'])||0,
-        _tax:Number(row['세액'])||0,
+        '거래구분':HT_GUBUN[row['가맹점유형']]||row['가맹점유형'],
+        _G:row['거래처'],
+        _A:row['업태'],
+        _B:row['종목'],
+        _co:row._co,
+        _cardNo:row._cardNo,
+        _cardKey:(row._co+' '+row._cardNo).trim(),
+        _bigo:row['비고'],
+        _note:note+(row['비고']?' · 국세청:'+row['비고']:''),
+        _rev:rev,_wd:wd,_hol:hol,_dup:dup,
+        _amt:row['합계'],
+        _tax:row['세액'],
         _acctName:ACCT_NAMES[code]||'',
       });
     }
   }
   procBtn.textContent='변환 시작 →';procBtn.disabled=false;
+  if(!parsedAny&&S.files.length){
+    alert('홈택스 사업용신용카드 엑셀 양식을 찾지 못했습니다.\n헤더에 [승인일자, 가맹점명] 컬럼이 있는 파일인지 확인해주세요.');
+    return;
+  }
   renderRes();
   go(3);
 }
@@ -781,18 +853,44 @@ function renderRes(){
     <div class="stat-card"><div class="stat-val r">${ud.length.toLocaleString()}</div><div class="stat-lbl">불공제</div><div class="stat-amt">${fmtN(udAmt)}원</div></div>
     <div class="stat-card"><div class="stat-val a">${rv.length.toLocaleString()}</div><div class="stat-lbl">검토필요</div><div class="stat-amt">공제세액 ${fmtN(taxAmt)}원</div></div>`;
 
+  // 카드별 집계 + 다운로드
+  const byCard={};
+  S.rows.forEach(r=>{(byCard[r._cardKey]=byCard[r._cardKey]||[]).push(r);});
+  S.cardKeys=Object.keys(byCard).sort();
+  document.getElementById('cardTbl').innerHTML=`
+    <table>
+      <thead><tr>
+        <th>파일명 (카드사 카드번호)</th><th class="td-num">건수</th>
+        <th class="td-num">공제</th><th class="td-num">공제세액</th>
+        <th class="td-num">불공제</th><th class="td-num">합계금액</th><th></th>
+      </tr></thead>
+      <tbody>${S.cardKeys.map((k,i)=>{
+        const rs=byCard[k],g=rs.filter(r=>r['공제여부']==='공제');
+        return `<tr>
+          <td style="font-family:var(--mono);font-size:12px">${k}.xlsx</td>
+          <td class="td-num">${rs.length}</td>
+          <td class="td-num">${g.length}</td>
+          <td class="td-num">${fmtN(g.reduce((s,r)=>s+r._tax,0))}</td>
+          <td class="td-num">${rs.length-g.length}</td>
+          <td class="td-num">${fmtN(rs.reduce((s,r)=>s+r._amt,0))}</td>
+          <td><button class="btn-opt" style="font-size:12px;padding:5px 12px" onclick="dlCard(${i})">📥 다운로드</button></td>
+        </tr>`;}).join('')}
+      </tbody>
+    </table>`;
+
   // Main table
   const pv=S.rows.slice(0,50);
   document.getElementById('tbl').innerHTML=`
     <table>
       <thead><tr>
-        <th>거래일자</th><th>요일</th><th>거래처</th><th>업태</th><th>종목</th>
+        <th>거래일자</th><th>카드</th><th>요일</th><th>거래처</th><th>업태</th><th>종목</th>
         <th class="td-num">공급가액</th><th class="td-num">세액</th>
         <th>차변계정</th><th>공제여부</th><th>처리근거</th>
       </tr></thead>
       <tbody>${pv.map(r=>`
         <tr class="${r._rev?'rev-row':''}">
           <td>${r['거래일자']}</td>
+          <td style="font-size:11px;color:var(--gray500)">${r._co} …${String(r._cardNo).slice(-4)}</td>
           <td><span class="chip ${r._wd&&!r._hol?'b':'a'}">${r._hol?'휴무':(r._wd?'평일':'주말')}</span></td>
           <td title="${r._G}" style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${r._G.slice(0,14)}</td>
           <td title="${r._A}">${r._A.slice(0,8)}</td>
@@ -803,7 +901,7 @@ function renderRes(){
           <td><span class="chip ${r['공제여부']==='공제'?'g':'r'}">${r['공제여부']}</span></td>
           <td style="font-size:11px;color:var(--gray400);max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${r._note}">${r._note}</td>
         </tr>`).join('')}
-        ${tot>50?`<tr class="more-row"><td colspan="10">… 외 ${fmtN(tot-50)}건은 다운로드 파일에서 확인</td></tr>`:''}
+        ${tot>50?`<tr class="more-row"><td colspan="11">… 외 ${fmtN(tot-50)}건은 다운로드 파일에서 확인</td></tr>`:''}
       </tbody>
     </table>`;
 
@@ -827,28 +925,27 @@ function renderRes(){
   }
 }
 
-/* ===================== DOWNLOAD ===================== */
-function dl(){
-  if(!S.rows.length){alert('먼저 파일을 변환해주세요.');return;}
-
-  const upload=S.rows.map(r=>({
-    '거래일자':r['거래일자'],
-    '거래처(가맹점명)':r['거래처(가맹점명)'],
-    '사업자번호':r['사업자번호'],
-    '품명':r['품명'],
-    '유형':r['유형'],
-    '공급가액':r['공급가액'],
-    '세액':r['세액'],
-    '봉사료':r['봉사료'],
-    '합계':r['합계'],
-    '차변계정코드':r['차변계정코드'],
-    '대변계정코드':r['대변계정코드'],
-    '공제여부':r['공제여부'],
-    '거래구분':r['거래구분'],
-  }));
-
+/* ===================== DOWNLOAD (카드별) ===================== */
+const UP_HEADERS=['거래일자','거래처(가맹점명)','사업자번호','품명','유형','공급가액','세액','봉사료','합계','차변계정코드','대변계정코드','공제여부','거래구분'];
+function upRow(r){
+  const o={};UP_HEADERS.forEach(h=>o[h]=r[h]);return o;
+}
+function safeName(s){return String(s).replace(/[\\/:*?"<>|]/g,'').trim()||'카드';}
+function cardWb(key){
+  const rows=S.rows.filter(r=>r._cardKey===key).map(upRow);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows,{header:UP_HEADERS}),'신용카드 매입');
+  return wb;
+}
+function dlCard(i){
+  const key=S.cardKeys[i];
+  if(!key)return;
+  XLSX.writeFile(cardWb(key),safeName(key)+'.xlsx');
+}
+function summaryWb(){
   const review=S.rows.filter(r=>r._rev).map(r=>({
     '거래일자':r['거래일자'],
+    '카드':r._cardKey,
     '요일':r._hol?'휴무':(r._wd?'평일':'주말'),
     '거래처(가맹점명)':r._G,
     '업태':r._A,
@@ -876,13 +973,34 @@ function dl(){
     {항목:'공제세액합계',내용:S.rows.filter(r=>r['공제여부']==='공제').reduce((s,r)=>s+r._tax,0)},
   ];
 
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(upload),'신용카드 매입');
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(summary),'집계요약');
-  if(review.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(review),'검토필요');
+  const perCard=(S.cardKeys||[]).map(k=>{
+    const rs=S.rows.filter(r=>r._cardKey===k),g=rs.filter(r=>r['공제여부']==='공제');
+    return{'파일명':safeName(k)+'.xlsx','건수':rs.length,'공제건수':g.length,
+      '공제세액':g.reduce((s,r)=>s+r._tax,0),'불공제건수':rs.length-g.length,
+      '합계금액':rs.reduce((s,r)=>s+r._amt,0)};
+  });
 
-  const fname=`위하고_카드매입_${S.biz}_${S.tax}_${new Date().toISOString().slice(0,10)}.xlsx`;
-  XLSX.writeFile(wb,fname);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(summary),'집계요약');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(perCard),'카드별요약');
+  if(review.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(review),'검토필요');
+  return wb;
+}
+
+async function dlAll(){
+  if(!S.rows.length){alert('먼저 파일을 변환해주세요.');return;}
+  const zip=new JSZip();
+  for(const key of S.cardKeys){
+    const out=XLSX.write(cardWb(key),{type:'array',bookType:'xlsx'});
+    zip.file(safeName(key)+'.xlsx',out);
+  }
+  zip.file('00_집계요약_검토필요.xlsx',XLSX.write(summaryWb(),{type:'array',bookType:'xlsx'}));
+  const blob=await zip.generateAsync({type:'blob'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`위하고업로드_카드별_${new Date().toISOString().slice(0,10)}.zip`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
 }
 
 /* ===================== INIT ===================== */
